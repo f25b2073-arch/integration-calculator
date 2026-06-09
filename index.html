@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Integration Calculator</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f5f5f7;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            max-width: 1000px;
+            width: 100%;
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 25px;
+        }
+        @media (max-width: 768px) {
+            .container { grid-template-columns: 1fr; }
+        }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        h2 {
+            margin-top: 0;
+            color: #1d1d1f;
+            font-weight: 600;
+        }
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        label {
+            font-weight: 500;
+            font-size: 0.9rem;
+            color: #666;
+        }
+        input {
+            padding: 10px 14px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        input:focus {
+            border-color: #0071e3;
+        }
+        .bounds-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        .result-box {
+            background-color: #f0f7ff;
+            border-left: 4px solid #0071e3;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .result-math {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #0071e3;
+            margin-top: 5px;
+        }
+        .error-message {
+            color: #de350b;
+            font-size: 0.85rem;
+            min-height: 18px;
+        }
+        .graph-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            min-height: 400px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="controls">
+        <h2>Integration Controls</h2>
+        
+        <div class="input-group">
+            <label for="functionInput">Function f(x)</label>
+            <input type="text" id="functionInput" value="x * sin(x)" placeholder="e.g., x^2, sin(x), 2*x + 5">
+            <div id="errorMsg" class="error-message"></div>
+        </div>
+
+        <div class="bounds-group">
+            <div class="input-group">
+                <label for="boundA">Lower Bound (a)</label>
+                <input type="number" id="boundA" value="0" step="any">
+            </div>
+            <div class="input-group">
+                <label for="boundB">Upper Bound (b)</label>
+                <input type="number" id="boundB" value="6.283" step="any">
+            </div>
+        </div>
+
+        <div class="result-box">
+            <label>Calculated Integral Value:</label>
+            <div class="result-math">
+                ∫ <span id="displayFormula">f(x) dx</span> = <span id="resultValue">0.00</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="graph-container">
+        <canvas id="calculatorChart"></canvas>
+    </div>
+</div>
+
+<script>
+    // Initialize elements
+    const functionInput = document.getElementById('functionInput');
+    const boundAInput = document.getElementById('boundA');
+    const boundBInput = document.getElementById('boundB');
+    const resultValue = document.getElementById('resultValue');
+    const displayFormula = document.getElementById('displayFormula');
+    const errorMsg = document.getElementById('errorMsg');
+    const ctx = document.getElementById('calculatorChart').getContext('2d');
+
+    let chart;
+
+    // Numerical integration using Simpson's Rule
+    function simpsonsRule(f, a, b, n = 200) {
+        if (n % 2 !== 0) n++; // n must be even
+        const h = (b - a) / n;
+        let sum = f(a) + f(b);
+
+        for (let i = 1; i < n; i++) {
+            const x = a + i * h;
+            sum += i % 2 === 0 ? 2 * f(x) : 4 * f(x);
+        }
+        return (h / 3) * sum;
+    }
+
+    // Safely parse and evaluate the math string using math.js
+    function getFunction(exprString) {
+        try {
+            // Compile the expression once for optimal performance loop
+            const compiled = math.compile(exprString);
+            errorMsg.textContent = ""; // Clear errors if valid
+            return (xValue) => compiled.evaluate({ x: xValue });
+        } catch (error) {
+            errorMsg.textContent = "Invalid mathematical expression.";
+            return null;
+        }
+    }
+
+    // Main update loop: calculates integral and updates the graph
+    function updateCalculator() {
+        const expr = functionInput.value;
+        const a = parseFloat(boundAInput.value);
+        const b = parseFloat(boundBInput.value);
+
+        if (isNaN(a) || !isFinite(a) || isNaN(b) || !isFinite(b)) return;
+
+        const f = getFunction(expr);
+        if (!f) return;
+
+        // Calculate Definite Integral
+        let integralResult = simpsonsRule(f, a, b);
+        // Clean up JavaScript floating point precision issues
+        if (Math.abs(integralResult) < 1e-10) integralResult = 0; 
+        resultValue.textContent = integralResult.toFixed(4);
+        displayFormula.textContent = `<sub>${a}</sub>\u222B<sup>${b}</sup> (${expr}) dx`;
+
+        // Generate Plotting Data
+        const padding = Math.abs(b - a) * 0.5 || 2; // view padding dynamically set based on bounds
+        const startX = Math.min(a, b) - padding;
+        const endX = Math.max(a, b) + padding;
+        const steps = 300;
+        const stepSize = (endX - startX) / steps;
+
+        const lineData = [];
+        const fillData = [];
+
+        for (let i = 0; i <= steps; i++) {
+            const currX = startX + i * stepSize;
+            try {
+                const currY = f(currX);
+                if (typeof currY === 'number' && !isNaN(currY) && isFinite(currY)) {
+                    lineData.push({ x: currX, y: currY });
+                    
+                    // If within bounds a and b, populate the filled region data
+                    if (currX >= Math.min(a, b) && currX <= Math.max(a, b)) {
+                        fillData.push({ x: currX, y: currY });
+                    }
+                }
+            } catch (e) {
+                // Ignore evaluation errors on edge values (like asymptotes)
+            }
+        }
+
+        // Draw / Update Chart
+        if (chart) {
+            chart.data.datasets[0].data = lineData;
+            chart.data.datasets[1].data = fillData;
+            chart.update('none'); // Update smoothly without reset animations
+        } else {
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [
+                        {
+                            label: `f(x) = ${expr}`,
+                            data: lineData,
+                            borderColor: '#0071e3',
+                            borderWidth: 2.5,
+                            pointRadius: 0,
+                            fill: false,
+                            tension: 0.1
+                        },
+                        {
+                            label: 'Integrated Area',
+                            data: fillData,
+                            backgroundColor: 'rgba(0, 113, 227, 0.2)',
+                            borderColor: 'transparent',
+                            pointRadius: 0,
+                            fill: 'origin', // Fills area between curve and y=0 axis
+                            tension: 0.1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            position: 'bottom',
+                            grid: { color: '#e5e5e7' }
+                        },
+                        y: {
+                            type: 'linear',
+                            grid: { color: '#e5e5e7' }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        }
+    }
+
+    // Attach event listeners for real-time reactivity
+    functionInput.addEventListener('input', updateCalculator);
+    boundAInput.addEventListener('input', updateCalculator);
+    boundBInput.addEventListener('input', updateCalculator);
+
+    // Initial load run
+    updateCalculator();
+</script>
+
+</body>
+</html>
